@@ -1,5 +1,6 @@
 # polarize
-Analyze sailboat performance data gathered from NEMA-0183 and NEMA-2000 (N2K) data sources
+
+Analyze sailboat performance data gathered from NEMA-0183 and NMEA-2000 (N2K) data sources
 
 ## Synopsis
 
@@ -15,7 +16,7 @@ polarize takes this data and converts it to more familiar forms - polar charts, 
 
 ## Configuration
 
-polarize expects two inputs:
+polarize requires two inputs:
 1. A list of .json files describing the races and courses in a regatta (typically regatta.json)
 2. A per-race NMEA data file pointed to from inside the regatta file
    - .log files are assumed to have raw N2K data
@@ -41,6 +42,7 @@ Option | Effect
  Polars can be generated per-regatta or aggregated from multiple regattas (polarize -polars \*/regatta.json)
 
 ## Notes
+
 NMEA-0183 .nmea files from SEAiq are parsed directly
 
 NMEA-2000 .log files from Yacht Devices VDR Voyage Data Recorder are converted to
