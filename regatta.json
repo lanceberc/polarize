@@ -1,0 +1,38 @@
+[
+    {
+	"boat": "Mayan",
+	"regatta": "2019 Leukemia Cup",
+	"basefn": "2019-10-20_LeukemiaCup",
+	"rudderCorrection": 2,
+	"tz": -7,
+	"cogsogSource": 1,
+	"latlonSource": 1
+    },
+    {
+	"race": "1",
+	"course": "18",
+	"data": "2019-10-20_LeukemiaCup.log",
+	"start": "2019-10-20T12:04:00",
+	"end": "2019-10-20T14:14:00",
+	"legs": [
+            { "start": "2019-10-20T12:05:56", "end": "2019-10-20T12:24:35" },
+            { "start": "2019-10-20T12:24:55", "end": "2019-10-20T13:06:46" },
+            { "start": "2019-10-20T13:07:16", "end": "2019-10-20T13:27:04" },
+            { "start": "2019-10-20T13:27:25", "end": "2019-10-20T13:43:34" },
+            { "start": "2019-10-20T13:44:34", "end": "2019-10-20T14:09:56" },
+            { "start": "2019-10-20T14:10:56", "end": "2019-10-20T14:13:45" }
+        ]
+    },
+    {
+	"course": "18",
+	"length": 11.76,
+	"legs": [
+            { "label": "Start to 6s (Mason)", "bearing": 149, "distance": 2.38 },
+            { "label": "6s (Mason) to 16s (Blackaller)", "bearing": 253, "distance": 1.65 },
+            { "label": "16s (Blackaller) to 17s (Harding)", "bearing": 17, "distance": 1.98 },
+            { "label": "17s (Harding) to 18p (Blossom)", "bearing": 107, "distance": 2.35 },
+            { "label": "18p (Blossom) to 12s (Little Harding)", "bearing": 290, "distance": 2.98 },
+            { "label": "12s (Little Harding) to Finish", "bearing": 26, "distance": 0.42 }
+        ]
+    }
+]
