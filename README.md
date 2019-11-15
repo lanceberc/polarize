@@ -16,8 +16,8 @@ leg start/end times, and boat-specific parameters
 Polars can be generated per-regatta or aggregated from multiple regattas
 
 Requires Python3.x and additional modules:
-- matplotlib for plotting [matplotlib](https://matplotlib.org)
-- numpy for some statistics [numpy](https://numpy.org)
-- scipy for Savitsky-Golay filtering [scipy](https://scipy.org)
-- xlsxwriter to generate Excel-compatible .xlsx files [xlsxwriter](https://pypi.org/project/XlsxWriter)
+- matplotlib for plotting (https://matplotlib.org)
+- numpy for some statistics (https://numpy.org)
+- scipy for Savitsky-Golay filtering (https://scipy.org)
+- xlsxwriter to generate Excel-compatible .xlsx files (https://pypi.org/project/XlsxWriter)
 
