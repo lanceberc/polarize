@@ -1,6 +1,6 @@
 # polarize
 
-Analyze sailboat performance data gathered from NEMA-0183 and NMEA-2000 (N2K) data sources
+Analyze sailboat performance data gathered from NMEA-0183 and NMEA-2000 (N2K) data sources
 
 ## Synopsis
 
