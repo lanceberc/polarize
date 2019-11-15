@@ -14,13 +14,13 @@ It has become very easy and relatively inexpensive to record raw NMEA data, for 
 
 polarize takes this data and converts it to more familiar forms - polar charts, strip charts, track files, spreadsheets, etc.
 
-## Configuration
+## Inputs/Configuration
 
 polarize requires two inputs:
 1. A list of .json files describing the races and courses in a regatta (typically regatta.json)
 2. A per-race NMEA data file pointed to from inside the regatta file
    - .log files are assumed to have raw N2K data
-   - .nmea files are assumed to have NMEA-0183 text files
+   - .nmea files are assumed to have NMEA-0183 text sentences
 
 The regatta file contains additional information including boat name, timezone offset, rudder correction, and COG/SOG sources.
 Typically one creates a directory for each regatta since they share courses.
@@ -43,26 +43,32 @@ Option | Effect
 
 ## Notes
 
-NMEA-0183 .nmea files from SEAiq are parsed directly
+### Input data format
+NMEA-0183 .nmea files (i.e. recorded with SEAiq) are parsed directly
 
 NMEA-2000 .log files from Yacht Devices VDR Voyage Data Recorder are converted to
 JSON by the canboat analyzer (https://www.github.com/canboat/canboat)
 
-It's becoming common for boats to have multiple sources of similar data. For instance a racing boat
-with a B&G MFD and ZG100 GPS/heading sensor will have COG/SOG data from both devices and they will
-disagree on COG/SOG due to different damping heuristics, sometimes by quite a bit. If converted to
-NMEA-0183 in a WiFi gateway the source is lost making it hard/impossible to filter for only one source.
-This will confuse polarize.
+### Conflicting NMEA sources
+It's becoming common for boats to have multiple sources of similar data. For instance COG/SOG data
+on a boat with a B&G MFD and ZG100 GPS/heading sensor will disagree due to different damping heuristics,
+sometimes by quite a bit. The N2K Source ID can be specified in the regatta file for N2K data to choose
+which device to use.
+If naively converted to
+NMEA-0183 by a WiFi gateway the source ID field is lost making it hard/impossible to filter for only one source.
+This may confuse polarize.
 
-Requires Python3.x and additional modules:
+### Software Environment
+polarize requires Python3.x and additional modules:
 - matplotlib for plotting (https://matplotlib.org)
 - numpy for some statistics (https://numpy.org)
 - scipy for Savitsky-Golay filtering (https://scipy.org)
 - xlsxwriter to generate Excel-compatible .xlsx files (https://pypi.org/project/XlsxWriter)
 
+### Localization
 polarize requires kludgey internal configuration:
 - The ANALYZE variable must point to the local copy of analyze to enable N2K data conversion
-- Polar wind ranges are set manually in a table. The default is good for a particular schooner typical San Francisco Bay wind ranges.
+- Polar wind ranges are set manually in a table. The default is good for a particular schooner in typical San Francisco Bay wind ranges.
 
 ## Example Output
 
