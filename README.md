@@ -24,6 +24,8 @@ polarize expects two inputs:
 The regatta file contains additional information including boat name, timezone offset, rudder correction, and COG/SOG sources.
 Typically one creates a directory for each regatta since they share courses.
 
+## Output
+
 polarize can generate several kinds of output:
 
 Option | Effect
@@ -37,8 +39,6 @@ Option | Effect
  \-gpx | Create gpx track
  
  Polars can be generated per-regatta or aggregated from multiple regattas (polarize -polars \*/regatta.json)
-
-## Output
 
 ## Notes
 NMEA-0183 .nmea files from SEAiq are parsed directly
