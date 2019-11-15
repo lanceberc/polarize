@@ -27,6 +27,7 @@ Polars can be generated per-regatta or aggregated from multiple regattas (polari
 ## Output
 
 polarize can generate several kinds of output:
+
 Option | Effect
 ------ | ------
  \-strip | Create per-race strip graph files
