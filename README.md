@@ -21,7 +21,7 @@ Requires Python3.x and additional modules:
 - scipy for Savitsky-Golay filtering (https://scipy.org)
 - xlsxwriter to generate Excel-compatible .xlsx files (https://pypi.org/project/XlsxWriter)
 
-![Strip Chart](Mayan_2019-09_RBBS_4_strip.png Strip Chart)
-![Polar Chart](Mayan_aggregate_polars.png Polar Chart)
-![Combined Polar Chart](Mayan_aggregate_combined_polars.png Combined Polar Chart)
+![Strip Chart](Mayan_2019-09_RBBS_4_strip.png)
+![Polar Chart](Mayan_aggregate_polars.png)
+![Combined Polar Chart](Mayan_aggregate_combined_polars.png)
 
