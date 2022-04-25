@@ -72,6 +72,7 @@ ANALYZER = "/Users/lance/src/canboat/canboat/rel/darwin-x86_64/analyzer"
 
 tzoffset = None
 sampleSeconds = 10
+expedition_sample_seconds = 1
 reportSeconds = 60
 
 # YYYY-MM-DD HH:MM:SS.sss
@@ -128,6 +129,7 @@ def parse_regatta(fn):
             regatta["path"] = p + '/' if p != "" else "./"
             regatta["races"] = []
             regatta["courses"] = {}
+            regatta["marks"] = {}
             global rudderCorrection
             rudderCorrection = 0.0 if not 'rudderCorrection' in e else float(e['rudderCorrection'])
             print("## Setting rudder correction to %4.1f%s" % (rudderCorrection, deg))
@@ -144,10 +146,11 @@ def parse_regatta(fn):
                 e[f] = []
             regatta["races"].append(e) # Add this to the list of races
             print("## Parse Race %s - Course %s %s - %s" % (e['race'], e['course'], e['startts'], e['endts']))
-
         elif "course" in e:
             regatta['courses'][e["course"]] = e # Add this to the dictionary of courses
             print("## Parse Course %s" % (e['course']))
+        elif "mark" in e:
+            regatta['marks'][e['mark']] = e
         else:
             print("Unknown regatta element '%s'" % (e))
 
@@ -429,14 +432,14 @@ def parse_race_n2k(regatta, r):
                 # Record LAT/LON even when not on a leg
                 #{"timestamp":"2019-10-20-19:04:57.588","prio":2,"src":1,"dst":255,"pgn":129025,"description":"Position, Rapid Update","fields":{"Latitude":37.8489280,"Longitude":-122.4480448}}
                 #{"timestamp":"2019-10-20-19:04:57.598","prio":2,"src":21,"dst":255,"pgn":129025,"description":"Position, Rapid Update","fields":{"Latitude":37.8489088,"Longitude":-122.4480384}}
-                if (LATLONSOURCE == None) or (j['src'] == LATLONSOURCE):
+                if ((LATLONSOURCE == None) or (j['src'] == LATLONSOURCE)) and 'fields' in j:
                     r['LATLON'].append((ts, j['fields']['Latitude'], j['fields']['Longitude']))
                     sampleCount += 1
             
             elif pgn == 127245:
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":252,"Direction Order":0}}
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":0,"Position":19.2}}
-                if j['fields']['Instance'] == 0:
+                if j['fields']['Instance'] == 0 and 'Position' in j['fields']:
                     rudder = j['fields']['Position'] + rudderCorrection
                     r['RUD'].append((ts, rudder))
                 sampleCount += 1
@@ -457,7 +460,7 @@ def parse_race_n2k(regatta, r):
             elif pgn == 129026:
                 #{"timestamp":"2019-10-20-19:04:57.891","prio":2,"src":1,"dst":255,"pgn":129026,"description":"COG & SOG, Rapid Update","fields":{"SID":54,"COG Reference":"True","COG":281.5,"SOG":1.38}}
                 #{"timestamp":"2019-10-20-19:04:58.001","prio":2,"src":21,"dst":255,"pgn":129026,"description":"COG & SOG, Rapid Update","fields":{"COG Reference":"True","COG":187.6,"SOG":1.47}}
-                if (COGSOGSOURCE == None) or (j['src'] == COGSOGSOURCE):
+                if ('fields' in j) and ('COG Reference' in j['fields']) and ((COGSOGSOURCE == None) or (j['src'] == COGSOGSOURCE)):
                     cog = j['fields']['COG'] if j['fields']['COG Reference'] != "True" else j['fields']['COG'] - variation
                     sog = ms2kts(j['fields']['SOG'])
                     r['COG'].append((ts, cog))
@@ -1284,6 +1287,223 @@ def expedition_polars():
                 f.write("  %4.1f %5.2f" % (float(center), np.percentile(np.array(points), 90) if len(points) > 0 else 0))
             f.write("\n")
 
+
+#Boat,Utc,BSP,AWA,AWS,TWA,TWS,TWD,RudderFwd,Leeway,Set,Drift,HDG,AirTemp,SeaTemp,Baro,Depth,Heel,Trim,Rudder,Tab,Forestay,Downhaul,MastAng,FStayLen,MastButt,Load S,Load P,Rake,Volts,ROT,GpQual,PDOP,GpsNum,GpsAge,Altitude,GeoSep,GpsMode,Lat,Lon,COG,SOG,DiffStn,Error,RunnerS,RunnerP,Vang,Trav,Main,KeelAng,KeelHt,Board,Oil P,RPM 1,RPM 2,Board P,Board S,DistToLn,RchTmToLn,RchDtToLn,GPS time,TWD+90,TWD-90,Downhaul2,Mk Lat,Mk Lon,Port lat,Port lon,Stbd lat,Stbd lon,HPE,RH,Lead P,Lead S,BackStay,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,User,TmToGun,TmToLn,Burn,BelowLn,GunBlwLn,WvSigHt,WvSigPd,WvMaxHt,WvMaxPd,Slam,Heave,MWA,MWS,Boom,Twist,TackLossT,TackLossD,TrimRate,HeelRate,DeflectorP,RudderP,RudderS,RudderToe,BspTr,FStayInner,DeflectorS,Bobstay,Outhaul,D0 P,D0 S,D1 P,D1 S,V0 P,V0 S,V1 P,V1 S,BoomAng,Cunningham,FStayInHal,JibFurl,JibH,MastCant,J1,J2,J3,J4,Foil P,Foil S,Reacher,Blade,Staysail,Solent,Tack,TackP,TackS,DeflectU,DeflectL,WinchP,WinchS,SpinP,SpinS,MainH,Mast2
+
+exp_fields = [
+"Boat","Utc","BSP","AWA","AWS","TWA","TWS","TWD","RudderFwd","Leeway","Set","Drift","HDG","AirTemp","SeaTemp","Baro","Depth","Heel","Trim","Rudder","Tab","Forestay","Downhaul","MastAng","FStayLen","MastButt","Load S","Load P","Rake","Volts","ROT","GpQual","PDOP","GpsNum","GpsAge","Altitude","GeoSep","GpsMode","Lat","Lon","COG","SOG","DiffStn","Error","RunnerS","RunnerP","Vang","Trav","Main","KeelAng","KeelHt","Board","Oil P","RPM 1","RPM 2","Board P","Board S","DistToLn","RchTmToLn","RchDtToLn","GPS time","TWD+90","TWD-90","Downhaul2","Mk Lat","Mk Lon","Port lat","Port lon","Stbd lat","Stbd lon","HPE","RH","Lead P","Lead S","BackStay","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","User","TmToGun","TmToLn","Burn","BelowLn","GunBlwLn","WvSigHt","WvSigPd","WvMaxHt","WvMaxPd","Slam","Heave","MWA","MWS","Boom","Twist","TackLossT","TackLossD","TrimRate","HeelRate","DeflectorP","RudderP","RudderS","RudderToe","BspTr","FStayInner","DeflectorS","Bobstay","Outhaul","D0 P","D0 S","D1 P","D1 S","V0 P","V0 S","V1 P","V1 S","BoomAng","Cunningham","FStayInHal","JibFurl","JibH","MastCant","J1","J2","J3","J4","Foil P","Foil S","Reacher","Blade","Staysail","Solent","Tack","TackP","TackS","DeflectU","DeflectL","WinchP","WinchS","SpinP","SpinS","MainH","Mast2"
+    ]
+
+expedition_log_map = {
+    "Boat": ("boat", "%d"),
+    "Utc": ("ts","%f"),
+    "BSP": ("STW","%.2f"),
+    "AWA": ("AWA","%d"),
+    "AWS": ("AWS","%d"),
+    "TWA": ("TWA","%d"),
+    "TWS": ("TWS","%.2f"),
+    "TWD": ("TWD","%.2f"),
+    "HDG": ("HDG","%.3f"),
+    "Rudder": ("RUD","%.2f"),
+    "Lat": ("LAT","%.4f"),
+    "Lon": ("LON","%.4f"),
+    "COG": ("COG","%.3f"),
+    "SOG": ("SOG","%.3f"),
+    "Mk Lat": ("mark lat", "%6f"),
+    "Mk Lon": ("mark lon", "%6f"),
+    }
+
+def excel_date(date1):
+    temp = datetime.datetime(1899, 12, 30)    # Note, not 31st Dec but 30th!
+    delta = date1 - temp
+    return float(delta.days) + (float(delta.seconds) / 86400)
+
+def expedition_log(regatta, r):
+    #print('## Expedition log')
+    l = r['legs']
+    c = regatta["courses"][r['course']]
+
+    # Go through the race raw data, average into buckets, emit one line of data per bucket
+    # Keep track of legs, advance the waypoint at the end of each leg - this puts the burden of tack/gybe on the next leg
+    buckets = []
+
+    # Chop the race into buckets
+    bucketDelta = datetime.timedelta(seconds=expedition_sample_seconds)
+    bucketStart = r['startts'] # is this right? should it be start of leg 0?
+
+    index = {}
+    # Set each field to the start of the first leg
+    for field in raceRawFields:
+        index[field] = 0
+
+    course = r['course']
+    legs = regatta['courses'][course]['legs']
+    leg = 0
+    #print("#Legs %r" % (legs))
+
+    while bucketStart < r['endts']:
+        bucket = {}
+        bucketEnd = bucketStart + bucketDelta
+        bucketEnd = min(bucketEnd, r['endts'])
+        bucket['ts'] = bucketStart
+
+        # Advance to current leg
+        while leg < (len(l)-1) and bucketStart > l[leg]['endts']:
+            leg += 1
+            #print("#Leg %d %r" % (leg, legs[leg]))
+
+        #print("#Leg %d %r" % (leg, r['legs'][leg]))
+        #bucket['mark lat'] = regatta['marks'][r['legs'][leg]['mark']]['lat']
+        #bucket['mark lon'] = regatta['marks'][r['legs'][leg]['mark']]['lon']
+
+        mark = legs[leg]['mark']
+        bucket['mark lat'] = regatta['marks'][legs[leg]['mark']]['lat']
+        bucket['mark lon'] = regatta['marks'][legs[leg]['mark']]['lon']
+
+        # Take the first lat/lon of the bucket - would mid bucket be better?
+        field = "LATLON"
+        # Advance to the beginning of the run of data for this bucket
+        while index[field] < (len(r[field])-1) and r[field][index[field]][0] < bucketStart:
+            index[field] += 1
+        bucket["LAT"] = r[field][index[field]][1]
+        bucket["LON"] = r[field][index[field]][2]
+
+        # ['AWA', 'AWS', 'STW', 'SOG', 'RUD', 'TWS']:
+        fields =['AWA', 'AWS', 'STW', 'SOG']
+
+        if 'RUD' in r and len(r['RUD']) > 0:
+            #print("Has rudder angles")
+            fields.append('RUD')
+        if 'TWS' in r and len(r['TWS']) > 0:
+            #print("Has true wind")
+            fields.append('TWS')
+        
+        for field in fields:
+            total = 0.0
+            count = 0
+            # Advance to the beginning of the run of data for this bucket
+            #print("%s ts index[%d] max %d" % (field, index[field], len(r[field])))
+            #print("%s ts %r < bucketStart %r" % (field, r[field][index[field]][0], bucketStart))
+            while index[field] < (len(r[field])-1) and r[field][index[field]][0] < bucketStart:
+                #print("## field %s[%d] %r < %r" % (field, index[field], r[field][index[field]][0], bucketStart))
+                index[field] += 1
+            # Run through the valid data summing the value
+            while index[field] < len(r[field]) and r[field][index[field]][0] < bucketEnd:
+                d = r[field][index[field]]
+                #if len(d) < 2:
+                #print("Field %s data element too small: %r" % (field, d))
+                total += d[1]
+                count += 1
+                index[field] += 1
+            # Take the average for the bucket
+            bucket[field] = None if count == 0 else total / count
+
+        markBearing = c["legs"][leg]["bearing"]
+        # If we're going north-ish, convert COG and Heading ranges to [-180, 180] in case some samples straddle due north
+        # This is to catch the "averaging samples around due north degress leads to due south" problem - mean([0,359.999]) = 180
+        fields = ['COG', 'HDG']
+        if len(r['TWD']) > 0:
+            fields.append('TWD')
+        for field in fields:
+            total = 0.0
+            count = 0
+            # Advance to the beginning of the run of data for this bucket
+            #if index[field] > len(r[field]):
+            #print("## %s[%d]: has %d data points" % (field, index[field], len(r[field])))
+            while index[field] < (len(r[field])-1) and r[field][index[field]][0] < bucketStart:
+                index[field] += 1
+            while index[field] < len(r[field]) and r[field][index[field]][0] < bucketEnd:
+                d = r[field][index[field]]
+                # If we're going north-ish, convert COG and Heading ranges to [-180, 180] in case some samples straddle due north
+                total += d[1] if (markBearing > 90 and markBearing < 270) or (d[1] <= 180) else d[1] - 360.0
+                count += 1
+                index[field] += 1
+            if count == 0:
+                bucket[field] = None
+            else:
+                bucket[field] = total / count
+                bucket[field] += 0.0 if (markBearing > 90 and markBearing < 270) or (bucket[field] > 0) else 360.0 # Convert back to 0 - 360 if needed
+        
+        """
+        Compute TWS and TWD for this bucket
+        
+        AWA = + for Starboard, – for Port
+        AWD = H + AWA ( 0 < AWD < 360 )
+        u = SOG * Sin (COG) – AWS * Sin (AWD)
+        v = SOG * Cos (COG) – AWS * Cos (AWD)
+        TWS = SQRT ( u*u + v*v )
+        TWD = ATAN ( u / v )
+        """
+
+        if bucket['HDG'] == None or bucket['COG'] == None or bucket['SOG'] == None or bucket['AWA'] == None or bucket['AWS'] == None:
+            # Can't compute True Wind w/o HDG, COG, SOG and AWA, AWS
+            bucket['TWD'] = None
+            bucket['TWS'] = None
+            bucket['TWA'] = None
+        else:
+            hdg = radians(bucket['HDG'])
+            aws = bucket['AWS']
+            awa = radians(bucket['AWA'])
+            cog = radians(bucket['COG'])
+            sog = bucket['SOG']
+
+        # Compute TWD, TWS if it's not done by the instruments
+        if not 'TWD' in bucket:
+            #print("# synthesizing TWS & TWD")
+            awd = fmod(hdg + awa, tau) # Compensate for boat's heading
+            u = (sog * cos(cog)) - (aws * cos(awd))
+            v = (sog * sin(cog)) - (aws * sin(awd))
+            tws = sqrt((u*u) + (v*v))
+            # Now we want to know where it's from, not where it's going, so add pi
+            twd = degrees(fmod(atan2(v,u)+pi, tau))
+
+            bucket['TWS'] = tws
+            bucket['TWD'] = twd
+
+        if (bucket['TWD'] != None) and (bucket['HDG'] != None):
+            # Compute TWA from TWD and Heading
+            twa = fmod((bucket['TWD'] - bucket['HDG']) + 360.0, 360.0)
+            bucket['TWA'] = twa
+        
+        bucketStart = bucketEnd
+        for key, value in bucket.items():
+            # Make sure there's at least one valid data item for this bucket
+            if key != 'ts' and value != None:
+                buckets.append(bucket) # append to the list of buckets
+                continue
+
+    # This is kludgey and maybe wrong, but Expedition only runs on Windows and this is
+    # where it looks for log files.
+    ofn = "C:/ProgramData/Expedition/log/%s_%s_%s_polarize.csv" % (regatta['boat'], regatta['basefn'], r['race'])
+    print('## Expedition log %s records: %d' % (ofn, len(buckets)))
+    with open(ofn, "w") as f:
+        header_string = ""
+        for field in exp_fields:
+            if field != "Boat":
+                header_string += ","
+            header_string += field
+        f.write(header_string)
+        f.write("\n")
+
+        for b in buckets:
+            for col in exp_fields:
+                if col in expedition_log_map:
+                    bucket_field = expedition_log_map[col][0]
+                    if bucket_field == 'boat':
+                        f.write('0')
+                    elif bucket_field == 'ts':
+#                        f.write("%f" % datetime.timestamp(b[bucket_field]))
+#                        timestamp = (b['ts'] - datetime.datetime(1970, 1, 1)) / datetime.timedelta(seconds=1)
+                        timestamp = excel_date(b['ts'])
+                        f.write("%f" % (timestamp))
+                    elif not bucket_field in b or b[bucket_field] == None:
+                        f.write(",")
+                    else:
+                        f.write(","+expedition_log_map[col][1] % (b[bucket_field]))
+                else:
+                    f.write(",")
+            f.write('\n')
+
 # Create a gpx track file. Could add waypoints for marks, tacks & gybes, etc. Could annotate w/ sensor data
 def gpx_track(regatta, r):
     ofn = "%s_%s_%s.gpx" % (regatta['boat'], regatta['basefn'], r['race'])
@@ -1319,9 +1539,14 @@ if __name__ == '__main__':
     parser.add_argument("-spreadsheet", default=False, action='store_true', dest='spreadsheet', help='Create xlsx spreadsheet file')
     parser.add_argument("-polars", default=False, action='store_true', dest='polars', help='Create aggregate polar graph file')
     parser.add_argument("-exp", default=False, action='store_true', dest='exp', help='Create aggregate Expedition polar text file')
+    parser.add_argument("-explog", default=False, action='store_true', dest='explog', help='Create Expedition CSV-format log file')
     parser.add_argument("-gpx", default=False, action='store_true', dest='gpx', help='Create gpx track')
-    parser.add_argument('regatta', nargs='*', help='Regatta JSON description files')
+    parser.add_argument('regatta', nargs='*', help='Regatta JSON description files (default regatta.json)')
     args = parser.parse_args()
+
+    if args.regatta == []:
+        print("Defaulting to regatta.json")
+        args.regatta = ['regatta.json']
 
     for arg in args.regatta:
         parse_regatta(arg)
@@ -1346,6 +1571,9 @@ if __name__ == '__main__':
 
             if args.gpx:
                 gpx_track(reg, race)
+
+            if args.explog:
+                expedition_log(reg, race)
 
     if args.polars or args.exp:
         gather_polar_data(regattalist)
