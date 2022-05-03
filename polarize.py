@@ -47,6 +47,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 deg = u'\N{DEGREE SIGN}'
 
 from dataclasses import dataclass
+import platform
+import sys
+import os
 import os.path
 import datetime
 import subprocess
@@ -71,7 +74,10 @@ STWCorrection = 1.0
 # Build the N2K analyzer from www.github.com/canboat/canboat
 # It's written in C. Pretty straight forward.
 # 'analyzer' converts raw binary N2K to somewhat verbose JSON, but it's a small price to pay
-ANALYZER = "/Users/lance/src/canboat/canboat/rel/darwin-x86_64/analyzer"
+if platform.system() == "Windows":
+    ANALYZER = 'C:/Users/mayan/src/canboat/rel/cygwin_nt-10.0-x86_64/analyzer.exe'
+else:
+    ANALYZER = "/Users/lance/src/canboat/canboat/rel/darwin-x86_64/analyzer"
 
 tzoffset = None
 sampleSeconds = 10
@@ -81,7 +87,7 @@ reportSeconds = 60
 # YYYY-MM-DD HH:MM:SS.sss
 boards = { 'Port': { }, 'Stbd': { } }
 
-raceRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS']
+raceRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS', 'Yaw', 'Pitch', 'Roll', 'ROT', 'Heave']
 legRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS']
 legFields = ['Time', 'TWA', 'TWD', 'TWS', 'AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG']
 
@@ -366,6 +372,9 @@ def parse_race_0183(regatta, r):
 # The N2k PGNs we need for sailing performance. Ignores things like routes/waypoints, AIS, etc.
 interesting_pgns = [127245, # Rudder angle
                     127250, # Vessel heading
+                    127251, # Rate of turn
+                    127252, # Heave
+                    127257, # Attitude (yaw, pitch, roll)
                     127258, # Magnetic variation
                     128259, # Speed through water (boatspeed)
                     129025, # Position (lat/lon)
@@ -391,14 +400,54 @@ def parse_race_n2k(regatta, r):
         logfile = regatta["path"] + r['data']
         print("Converting N2K %s to %s" % (logfile, jsonfile))
 
-        with open(logfile, 'r') as infile, open(jsonfile, 'wb') as outfile:
-            p1 = subprocess.Popen([ ANALYZER, '-json' ], stdin=infile, stdout=subprocess.PIPE)
-            p2 = subprocess.Popen([ '/usr/bin/grep', '-E', pgnpat], stdin=p1.stdout, stdout=outfile)
-            retcode = p2.wait()
-            if retcode == None:
-                print("N2K analyze pipe not terminated?")
-            elif retcode != 0:
-                print("N2K analyze pipe exited with code %d" % (retcode))
+        #with open(logfile, 'r') as infile, open(jsonfile, 'wb') as outfile:
+        with open(jsonfile, 'wb') as outfile:
+            if platform.system() == "Windows":
+                #p1cmd = [ 'C:/cygwin64/bin/run.exe', ANALYZER, '-json', '-d', '-file', logfile ]
+                #p2cmd = [ 'C:/cygwin64/bin/run.exe', 'C:/cygwin64/bin/grep.exe', '-E', pgnpat]
+                #p1cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', ANALYZER, '-json', '-d', '-file', logfile ]
+                #p2cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', 'grep', '-E', pgnpat]
+                #cwd=(os.path.split(sys.argv[0])[0]).replace('\\', '/')
+                cwd=os.getcwd().replace('\\', '/')
+                p1cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', '%s -json -file %s/%s' % (ANALYZER, cwd, logfile) ]
+                p2cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', "grep -E '%s'" % (pgnpat)]
+            else:
+                # Assume Linux / MacOS
+                p1cmd = [ ANALYZER, '-json', '-d', '-file', logfile ]
+                p2cmd = [ '/usr/bin/grep', '-E', pgnpat]
+            print("infile %r" % (logfile))
+            print("p1cmd: %r" % (p1cmd))
+            print("p2cmd: %r" % (p2cmd))
+            print("outfile %r" % (jsonfile))
+            #p1 = subprocess.Popen(p1cmd, stdin=infile, stdout=subprocess.PIPE)
+            p1 = subprocess.Popen(p1cmd, stdout=subprocess.PIPE)
+            p2 = subprocess.Popen(p2cmd, stdin=p1.stdout, stdout=outfile)
+            if False:
+                out1, err1 = p1.communicate()
+                if out1 != None:
+                    print("Analyzer stdout: %r" % (out1))
+                if err1 != None:
+                    print("Analyzer stderr: %r" % (erra))
+            ret1 = p1.wait()
+            if ret1 == None:
+                print("Analyzer wait() returned None")
+            elif ret1 != 0:
+                print("Analyzer exited with code %d" % (ret1))
+            else:
+                print("Analyzer exited ok")
+            ret2 = p2.wait()
+
+        if ret2 == None:
+            print("N2K analyze pipe not terminated?")
+            p2.kill()
+            os.remove(jsonfile)
+        elif ret2 != 0:
+            print("N2K analyze pipe exited with code %d" % (ret2))
+            print("p1cmd: %r" % (p1cmd))
+            print("p2cmd: %r" % (p2cmd))
+            print("Removing %s" % (jsonfile))
+            os.remove(jsonfile)
+            return
         
     with open(jsonfile, "r") as f:
         r['variation'] = 0
@@ -493,10 +542,25 @@ def parse_race_n2k(regatta, r):
             elif pgn == 130306:
                 #{"timestamp":"2019-10-20-19:04:58.009","prio":2,"src":9,"dst":255,"pgn":130306,"description":"Wind Data","fields":{"SID":0,"Wind Speed":7.18,"Wind Angle":281.8,"Reference":"Apparent"}}
                 aws = ms2kts(j['fields']['Wind Speed'])
-                awa = j['fields']['Wind Angle'] 
+                awa = j['fields']['Wind Angle']
                 awa = awa if awa <= 180.0 else awa - 360.0
                 r['AWS'].append((ts, aws))
                 r['AWA'].append((ts, awa))
+                sampleCount += 1
+
+            elif pgn == 127257:
+                # Attitude - pgn fields from analyzer are in degrees?
+                r['Yaw'].append((ts, j['fields']['Yaw']))
+                r['Pitch'].append((ts, j['fields']['Pitch']))
+                r['Roll'].append((ts, j['fields']['Roll']))
+                sampleCount += 1
+            elif pgn == 127251:
+                # Rate of turn
+                r['ROT'].append((ts, j['fields']['Rate']))
+                sampleCount += 1
+            elif pgn == 127252:
+                # Heave
+                r['Heave'].append((ts, j['fields']['Heave']))
                 sampleCount += 1
 
 def parse_race(regatta, r):
@@ -1346,6 +1410,10 @@ expedition_log_map = {
     "Lon": ("LON","%.4f"),
     "COG": ("COG","%.3f"),
     "SOG": ("SOG","%.3f"),
+    "Heel": ("Roll","%.2f"),
+    "Trim": ("Pitch","%.2f"),
+    "ROT": ("ROT","%.2f"),
+    "Heave": ("Heave","%.2f"),
     "Mk Lat": ("mark lat", "%6f"),
     "Mk Lon": ("mark lon", "%6f"),
     }
@@ -1414,6 +1482,18 @@ def expedition_log(regatta, r):
         if 'TWS' in r and len(r['TWS']) > 0:
             #print("Has true wind")
             fields.append('TWS')
+        if 'Roll' in r and len(r['Roll']) > 0:
+            #print("Has heel")
+            fields.append('Roll')
+        if 'Pitch' in r and len(r['Pitch']) > 0:
+            #print("Has trim")
+            fields.append('Pitch')
+        if 'Heave' in r and len(r['Heave']) > 0:
+            #print("Has Heave")
+            fields.append('Heave')
+        if 'ROT' in r and len(r['ROT']) > 0:
+            #print("Has ROT")
+            fields.append('ROT')
         
         for field in fields:
             total = 0.0
