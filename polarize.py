@@ -62,8 +62,11 @@ import xlsxwriter
 
 regattalist = []
 regattas = {}
+racecount = 0
+legcount = 0
 
 rudderCorrection = 0.0
+STWCorrection = 1.0
 
 # Build the N2K analyzer from www.github.com/canboat/canboat
 # It's written in C. Pretty straight forward.
@@ -133,6 +136,9 @@ def parse_regatta(fn):
             global rudderCorrection
             rudderCorrection = 0.0 if not 'rudderCorrection' in e else float(e['rudderCorrection'])
             print("## Setting rudder correction to %4.1f%s" % (rudderCorrection, deg))
+            global STWCorrection
+            STWCorrection = 1.0 if not 'STWCorrection' in e else float(e['STWCorrection'])
+            print("## Setting STW correction to %5.2f%s" % (STWCorrection * 100, "%"))
             global LATLONSOURCE, COGSOGSOURCE
             LATLONSOURCE = None if not 'latlonSource' in e else int(e['latlonSource'])
             COGSOGSOURCE = None if not 'cogsogSource' in e else int(e['cogsogSource'])
@@ -343,7 +349,7 @@ def parse_race_0183(regatta, r):
                 # Speed through Water (with heading?)
                 # $SDVHW,348.7,T,335.4,M,5.7,N,10.6,K*7E
                 #hdg = float(fields[3]) # Do not believe heading from boat speed sensor
-                stw = float(fields[5])
+                stw = float(fields[5]) * STWCorrection
                 r['STW'].append((ts, stw))
                 sampleCount += 1
             elif sentence == "VTG":
@@ -404,8 +410,14 @@ def parse_race_n2k(regatta, r):
         while True:
             line = f.readline()
             if not line:
+                print("## End of data at %s (%s)" % (ts, j['timestamp']))
                 break
-            j = json.loads(line)
+            try:
+                j = json.loads(line)
+            except:
+                print("Parse exception %s" % (line))
+                continue
+
             #print("Line %s" % (line))
             #print("JSON %r" % (j))
             ts = datetime.datetime.strptime(j['timestamp'][:-4], '%Y-%m-%d-%H:%M:%S')
@@ -432,16 +444,23 @@ def parse_race_n2k(regatta, r):
                 # Record LAT/LON even when not on a leg
                 #{"timestamp":"2019-10-20-19:04:57.588","prio":2,"src":1,"dst":255,"pgn":129025,"description":"Position, Rapid Update","fields":{"Latitude":37.8489280,"Longitude":-122.4480448}}
                 #{"timestamp":"2019-10-20-19:04:57.598","prio":2,"src":21,"dst":255,"pgn":129025,"description":"Position, Rapid Update","fields":{"Latitude":37.8489088,"Longitude":-122.4480384}}
-                if ((LATLONSOURCE == None) or (j['src'] == LATLONSOURCE)) and 'fields' in j:
-                    r['LATLON'].append((ts, j['fields']['Latitude'], j['fields']['Longitude']))
+                if (LATLONSOURCE == None) or (j['src'] == LATLONSOURCE):
+                    if not 'fields' in j:
+                        print("LAT/LON missing fields %s" % (j))
+                    else:
+                        r['LATLON'].append((ts, j['fields']['Latitude'], j['fields']['Longitude']))
                     sampleCount += 1
             
             elif pgn == 127245:
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":252,"Direction Order":0}}
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":0,"Position":19.2}}
-                if j['fields']['Instance'] == 0 and 'Position' in j['fields']:
-                    rudder = j['fields']['Position'] + rudderCorrection
-                    r['RUD'].append((ts, rudder))
+                if (j['fields']['Instance'] == 0):
+                    if not ('Position' in j['fields']):
+                        #print("## Rudder missing Position %s" % (j))
+                        pass
+                    else:
+                        rudder = j['fields']['Position'] + rudderCorrection
+                        r['RUD'].append((ts, rudder))
                 sampleCount += 1
 
             elif pgn == 127250:
@@ -453,18 +472,22 @@ def parse_race_n2k(regatta, r):
             elif pgn == 128259:
                 #{"timestamp":"2019-10-20-19:04:56.538","prio":2,"src":35,"dst":255,"pgn":128259,"description":"Speed","fields":{"SID":6,"Speed Water Referenced":1.35,"Speed Water Referenced Type":"Paddle wheel"}}
                 ms = j['fields']['Speed Water Referenced']
-                stw = ms2kts(ms)
+                stw = ms2kts(ms) * STWCorrection
                 r['STW'].append((ts, stw))
                 sampleCount += 1
 
             elif pgn == 129026:
                 #{"timestamp":"2019-10-20-19:04:57.891","prio":2,"src":1,"dst":255,"pgn":129026,"description":"COG & SOG, Rapid Update","fields":{"SID":54,"COG Reference":"True","COG":281.5,"SOG":1.38}}
                 #{"timestamp":"2019-10-20-19:04:58.001","prio":2,"src":21,"dst":255,"pgn":129026,"description":"COG & SOG, Rapid Update","fields":{"COG Reference":"True","COG":187.6,"SOG":1.47}}
-                if ('fields' in j) and ('COG Reference' in j['fields']) and ((COGSOGSOURCE == None) or (j['src'] == COGSOGSOURCE)):
-                    cog = j['fields']['COG'] if j['fields']['COG Reference'] != "True" else j['fields']['COG'] - variation
-                    sog = ms2kts(j['fields']['SOG'])
-                    r['COG'].append((ts, cog))
-                    r['SOG'].append((ts, sog))
+                if (COGSOGSOURCE == None) or (j['src'] == COGSOGSOURCE):
+                    if not 'COG Reference' in j['fields']:
+                        # print("No COG Reference %s" % (j))
+                        pass
+                    else:
+                        cog = j['fields']['COG'] if j['fields']['COG Reference'] != "True" else j['fields']['COG'] - variation
+                        sog = ms2kts(j['fields']['SOG'])
+                        r['COG'].append((ts, cog))
+                        r['SOG'].append((ts, sog))
                     sampleCount += 1
 
             elif pgn == 130306:
@@ -908,13 +931,16 @@ def leg_chart(regatta, r, leg, fig, ax):
     legDataFields = ["AWA", 'STW', "TWD", "TWS", "RUD"]
     legData = []
     for ld in legDataFields:
-        if l['samples'][0][ld] != None:
-            legData.append(ld)
+        if (len(l['samples']) == 0):
+            print("## Leg %d No samples for %s" % (leg, ld))
+        else:
+            if l['samples'][0][ld] != None:
+                legData.append(ld)
 
     firstTime = l['startts'] + tzoffset
     lastTime = firstTime + datetime.timedelta(seconds=maxLegDuration)
 
-    print("## leg_chart Race %s Leg %r" % (r['race'], leg))
+    print("## leg_chart Race %s Leg %r Samples %d" % (r['race'], leg, len(legData)))
     
     ax[leg].set_title(loc='left', label="Race %s Leg %d %s (%.2fnm @ %03d%s) - (%s - %s) %s"
                       % (r['race'], leg+1, c["legs"][leg]["label"], c["legs"][leg]["distance"], c["legs"][leg]["bearing"], deg, l['start'][11:], l['end'][11:], l['duration']))
@@ -922,6 +948,7 @@ def leg_chart(regatta, r, leg, fig, ax):
     ax[leg].hlines(y=0, color='black', xmin=firstTime, xmax=lastTime, linestyles='--', linewidth=0.5)
 
     hostUsed = False
+    
     for d in legData:
         s = y_scales[plotItems[d]["scale"]]
         if not s["in_use"]:
@@ -1046,15 +1073,17 @@ polarData = [
 # This range matches where a particular boat accelerates
 # Six plots fit well on a page
 polarData = [
-    { 'min':  0, 'max': 11, 'ax': None, 'data': [] },
-    { 'min': 11, 'max': 13, 'ax': None, 'data': [] },
-    { 'min': 13, 'max': 15, 'ax': None, 'data': [] },
-    { 'min': 15, 'max': 18, 'ax': None, 'data': [] },
-    { 'min': 18, 'max': 22, 'ax': None, 'data': [] },
-    { 'min': 22, 'max': 28, 'ax': None, 'data': [] }
+    { 'min':  0.0, 'max': 11.0, 'ax': None, 'data': [] },
+    { 'min': 11.0, 'max': 13.0, 'ax': None, 'data': [] },
+    { 'min': 13.0, 'max': 15.0, 'ax': None, 'data': [] },
+    { 'min': 15.0, 'max': 18.0, 'ax': None, 'data': [] },
+    { 'min': 18.0, 'max': 22.0, 'ax': None, 'data': [] },
+    { 'min': 22.0, 'max': 28.0, 'ax': None, 'data': [] }
 ]
 
 def gather_polar_data(rl):
+    global racecount
+    global legcount
     for reg in rl:
         regatta = regattas[reg]
         print("## plot_polar regatta %s" % (regatta['regatta']))
@@ -1072,9 +1101,15 @@ def gather_polar_data(rl):
                     twd = s['TWD']
                     hdg = s['HDG']
                     ts = s['ts']
+
+                    if tws == None:
+                        print("## Skipping sample with no TWS")
+                        continue
                     
                     for p, polar in enumerate(polarData):
                         # If the max is greater than tws then this is the right bucket
+                        if type(polar['max']) != type(tws):
+                            print("## type(polar['max']): %r, type(tws): %r" % (type(polar['max']), type(tws)))
                         if polar['max'] > tws:
                             theta = radians(twa)
                             datum = (theta, stw, 'red' if theta > pi else 'green', r['race'], leg, ts, twd, hdg, twa)
@@ -1088,6 +1123,8 @@ lineSpan = 7.5
 # Make an aggregate plot with all wind ranges
 # Six plots fit well on a standard page
 def plot_polars():
+    global racecount
+    global legcount
     fig, axes = plt.subplots(2, 3, figsize=(10, 8), subplot_kw=dict(polar=True), constrained_layout=True)
     polarData[0]['ax'] = axes[0, 0]
     polarData[1]['ax'] = axes[0, 1]
@@ -1097,8 +1134,8 @@ def plot_polars():
     polarData[5]['ax'] = axes[1, 2]
 
     regattacount = len(regattas)
-    racecount = 0
-    legcount = 0
+    #racecount = 0
+    #legcount = 0
     bn = regattas[regattalist[0]]['boat']
     if regattacount > 1:
         fig.suptitle("%s - %d Regatta%s, %d Race%s, %d Legs\n" % (bn,
