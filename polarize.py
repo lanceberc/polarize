@@ -403,11 +403,7 @@ def parse_race_n2k(regatta, r):
         #with open(logfile, 'r') as infile, open(jsonfile, 'wb') as outfile:
         with open(jsonfile, 'wb') as outfile:
             if platform.system() == "Windows":
-                #p1cmd = [ 'C:/cygwin64/bin/run.exe', ANALYZER, '-json', '-d', '-file', logfile ]
-                #p2cmd = [ 'C:/cygwin64/bin/run.exe', 'C:/cygwin64/bin/grep.exe', '-E', pgnpat]
-                #p1cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', ANALYZER, '-json', '-d', '-file', logfile ]
-                #p2cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', 'grep', '-E', pgnpat]
-                #cwd=(os.path.split(sys.argv[0])[0]).replace('\\', '/')
+                # Analyzer has to be run under Cygwin; use bash to start both the analyzer and grep
                 cwd=os.getcwd().replace('\\', '/')
                 p1cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', '%s -json -file %s/%s' % (ANALYZER, cwd, logfile) ]
                 p2cmd = [ 'C:/cygwin64/bin/bash', '--login', '-c', "grep -E '%s'" % (pgnpat)]
@@ -415,26 +411,25 @@ def parse_race_n2k(regatta, r):
                 # Assume Linux / MacOS
                 p1cmd = [ ANALYZER, '-json', '-d', '-file', logfile ]
                 p2cmd = [ '/usr/bin/grep', '-E', pgnpat]
-            print("infile %r" % (logfile))
-            print("p1cmd: %r" % (p1cmd))
-            print("p2cmd: %r" % (p2cmd))
-            print("outfile %r" % (jsonfile))
             #p1 = subprocess.Popen(p1cmd, stdin=infile, stdout=subprocess.PIPE)
+            # Using the -file argument instead of stdin
             p1 = subprocess.Popen(p1cmd, stdout=subprocess.PIPE)
             p2 = subprocess.Popen(p2cmd, stdin=p1.stdout, stdout=outfile)
-            if False:
-                out1, err1 = p1.communicate()
-                if out1 != None:
-                    print("Analyzer stdout: %r" % (out1))
-                if err1 != None:
-                    print("Analyzer stderr: %r" % (erra))
+
+            #out1, err1 = p1.communicate()
             ret1 = p1.wait()
             if ret1 == None:
                 print("Analyzer wait() returned None")
             elif ret1 != 0:
                 print("Analyzer exited with code %d" % (ret1))
+                print("infile %r" % (logfile))
+                print("p1cmd: %r" % (p1cmd))
+                print("p2cmd: %r" % (p2cmd))
+                print("outfile: %r" % (jsonfile))
+                # Not sure how to get stderr - if communicate is called it intercepts stdout being piped to grep
+                #print("stderr: %r" % (err1))
             else:
-                print("Analyzer exited ok")
+                print("Analyzer exited OK")
             ret2 = p2.wait()
 
         if ret2 == None:
@@ -447,7 +442,7 @@ def parse_race_n2k(regatta, r):
             print("p2cmd: %r" % (p2cmd))
             print("Removing %s" % (jsonfile))
             os.remove(jsonfile)
-            return
+            return # maybe should quit program
         
     with open(jsonfile, "r") as f:
         r['variation'] = 0
