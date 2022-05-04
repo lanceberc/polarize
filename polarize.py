@@ -88,8 +88,8 @@ reportSeconds = 60
 boards = { 'Port': { }, 'Stbd': { } }
 
 raceRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS', 'Yaw', 'Pitch', 'Roll', 'ROT', 'Heave']
-legRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS']
-legFields = ['Time', 'TWA', 'TWD', 'TWS', 'AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG']
+legRawFields = ['AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'LATLON', 'TWA', 'TWD', 'TWS', 'Pitch', 'Roll', 'ROT', 'Heave']
+legFields = ['Time', 'TWA', 'TWD', 'TWS', 'AWA', 'AWS', 'STW', 'RUD', 'COG', 'SOG', 'HDG', 'Pitch', 'Roll', 'ROT', 'Heave']
 
 # Min and max true wind angles for polars - assume if it's outside the range we're tacking or gybing
 minTWA = 25.0
@@ -612,7 +612,7 @@ def analyze_leg(regatta, r, leg):
     bucketStart = l['startts']
 
     index = {}
-    for field in ['AWA', 'AWS', 'STW', 'SOG', 'RUD', 'TWS', 'COG', 'HDG', 'TWD']:
+    for field in ['AWA', 'AWS', 'STW', 'SOG', 'RUD', 'TWS', 'COG', 'HDG', 'TWD', 'Pitch', 'Roll', 'ROT', 'Heave']:
         index[field] = l['sindex'][field]
     
     l['samples'] = []
@@ -622,7 +622,8 @@ def analyze_leg(regatta, r, leg):
         bucketEnd = min(bucketEnd, l['endts'])
         bucket['ts'] = bucketStart
 
-        for field in ['AWA', 'AWS', 'STW', 'SOG', 'RUD', 'TWS']:
+        # Fields that can be a simple per bucket average
+        for field in ['AWA', 'AWS', 'STW', 'SOG', 'RUD', 'TWS', 'Pitch', 'Roll', 'ROT', 'Heave']:
             total = 0.0
             count = 0
             # Advance to the beginning of the run of data for this bucket
@@ -976,7 +977,7 @@ def leg_chart(regatta, r, leg, fig, ax):
     y_scales["apparent"] = {"in_use": False, "min": -180, "max": 180, "label": ""}
     y_scales["windspeed"] = {"in_use": False, "min": 0, "max": 25, "label": ""}
     y_scales["boatspeed"] = {"in_use": False, "min": 0, "max": 12, "label": ""}
-    y_scales["rudder"] = {"in_use": False, "min": -15, "max": 15, "label": ""}
+    y_scales["rudder"] = {"in_use": False, "min": -20, "max": 20, "label": ""}
 
     plotItems = {}
     plotItems['COG'] = { 'label': 'COG', 'scale': 'compass', 'color': 'black', 'style': '-' }
@@ -988,17 +989,18 @@ def leg_chart(regatta, r, leg, fig, ax):
     plotItems['HDG'] = { 'label': 'HDG', 'scale': 'compass', 'color': cmap[4], 'style': '-' }
     plotItems['STW'] = { 'label': 'STW', 'scale': 'boatspeed', 'color': cmap[2], 'style': '-' }
     plotItems['RUD'] = { 'label': 'Rudder', 'scale': 'rudder', 'color': cmap[3], 'style': ':' }
+    plotItems['Roll'] = { 'label': 'Heel', 'scale': 'rudder', 'color': cmap[3], 'style': '-' }
 
     c = regatta['courses'][r['course']]
     l = r['legs'][leg]
 
-    legDataFields = ["AWA", 'STW', "TWD", "TWS", "RUD"]
+    legDataFields = ["AWA", 'STW', "TWD", "TWS", "RUD", 'Roll']
     legData = []
     for ld in legDataFields:
         if (len(l['samples']) == 0):
             print("## Leg %d No samples for %s" % (leg, ld))
         else:
-            if l['samples'][0][ld] != None:
+            if ld in l['samples'][0] and l['samples'][0][ld] != None:
                 legData.append(ld)
 
     firstTime = l['startts'] + tzoffset
