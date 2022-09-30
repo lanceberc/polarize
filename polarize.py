@@ -498,7 +498,7 @@ def parse_race_n2k(regatta, r):
             elif pgn == 127245:
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":252,"Direction Order":0}}
                 #{"timestamp":"2019-10-20-19:04:56.206","prio":2,"src":204,"dst":255,"pgn":127245,"description":"Rudder","fields":{"Instance":0,"Position":19.2}}
-                if (j['fields']['Instance'] == 0):
+                if (('Instance' in j['fields']) and (j['fields']['Instance'] == 0)):
                     if not ('Position' in j['fields']):
                         #print("## Rudder missing Position %s" % (j))
                         pass
