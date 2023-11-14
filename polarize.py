@@ -77,7 +77,9 @@ STWCorrection = 1.0
 if platform.system() == "Windows":
     ANALYZER = 'C:/Users/mayan/src/canboat/rel/cygwin_nt-10.0-x86_64/analyzer.exe'
 else:
+    # Should figure out which arch we're running on
     ANALYZER = "/Users/lance/src/canboat/canboat/rel/darwin-x86_64/analyzer"
+    ANALYZER = "/Users/lance/src/canboat/rel/darwin-arm64/analyzer"
 
 tzoffset = None
 sampleSeconds = 10
@@ -102,6 +104,9 @@ maxAWA = 165.0
 # Set latlonSource and cogsogSource to 1 for B&G or 21 for the Vesper XB8000 - may vary per-boat
 LATLONSOURCE = None
 COGSOGSOURCE = None
+
+# Allow defining lat/lon for Expedition logs since it's known to have bad data.
+BOUNDS = None
 
 # Color map for most lines in strip and polar plots. Chosen to look 'nice'
 #cmap = plt.cm.Dark2.colors
@@ -148,8 +153,12 @@ def parse_regatta(fn):
             global LATLONSOURCE, COGSOGSOURCE
             LATLONSOURCE = None if not 'latlonSource' in e else int(e['latlonSource'])
             COGSOGSOURCE = None if not 'cogsogSource' in e else int(e['cogsogSource'])
-            tzoffset = datetime.timedelta() if not 'tz' in e else datetime.timedelta(hours=int(e['tz']))
+            tzoffset = datetime.timedelta(0) if not 'tz' in e else datetime.timedelta(hours=int(e['tz']))
             print("## Parse Regatta %s" % (name))
+            global BOUNDS
+            BOUNDS = None if not 'bounds' in e else e['bounds']
+            if not BOUNDS is None:
+                print("## Bounds: %r" % (BOUNDS))
         elif "race" in e:
             ## print("## Parse Race %r" % (e))
             e['startts'] = datetime.datetime.strptime(e['start'], '%Y-%m-%dT%H:%M:%S') - tzoffset
@@ -558,11 +567,167 @@ def parse_race_n2k(regatta, r):
                 r['Heave'].append((ts, j['fields']['Heave']))
                 sampleCount += 1
 
+def parse_race_csv(regatta, r):
+    # For now assume that CSV files are from Expedition
+    # Expedition files start with '!Boat in the A0 cell followed by field names in B0-x0
+    # The second line starts with !boat in A1 and field numbers in B1-x1
+    # Line three is the Expedition version, and lines 4-n are pairs of field number and value
+    # The first field is the time (usually [0,Utc-time-as-a-float])
+
+    # https://stackoverflow.com/questions/46130132/converting-unix-time-into-date-time-via-excel
+    # Unix GMT timestamp = (DATE - 25569) * (86400 * 1000)
+
+    c = regatta["courses"][r['course']]
+    fn = regatta['path'] + r['data']
+    print("## Parse Race %s csv (Expedition): %s" % (r['race'], fn))
+    with open(fn, 'r') as f:
+        r['variation'] = 0
+        r['LATLON'] = []
+
+        variation = 0
+        sampleCount = 0
+        sentenceCount = 0
+        lineNumber = 0
+        expFields = {}
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            # Strip off the trailing <LF>
+            if len(line) > 0:
+                line = line[:-1]
+
+            fields = line.split(',')
+
+            if (fields[0] == "!Boat"):
+                #print("Found fieldNames");
+                fieldNames = fields
+                continue;
+            if (fields[0] == "!boat"):
+                #print("Found fieldNumbers");
+                fieldNumbers = fields
+                for i in range(len(fieldNames)):
+                    expFields[fieldNumbers[i]] = fieldNames[i]
+                    #print("Field #%s: %s" % (fieldNumbers[i], fieldNames[i]))
+                lineNumber = lineNumber + 1                    
+                continue;
+
+            #print("field[0]: %s fields[0][0:1] '%s'" % (fields[0], fields[0][0:1]))
+            #print("field[-1]: %s fields[1][-2:-1] '%s'" % (fields[0], fields[0][-2:-1]))
+            if (fields[0][0:1] == "!"):
+                print("Expedition version %s" % (fields[0][1:]))
+                lineNumber = lineNumber + 1                    
+                continue;
+            
+            field = 0;
+            vals = {}
+            bad = False
+            while (field+1) < len(fields):
+                bad = False
+                fieldNumber, val = fields[field:field+2]
+                if len(fieldNumber) == 0:
+                    field = field + 2
+                    continue;
+                if not fieldNumber in expFields:
+                    print(line)
+                    print("line %d no field number %s" % (lineNumber, fieldNumber))
+                    field = field + 2
+                    continue
+                variable = expFields[fieldNumber]
+                try:
+                    vals[variable] = float(val)
+                except ValueError:
+                    print("## line %d: vals[%s (#%s)]: %s" % (lineNumber, variable, fieldNumber, val))
+                    print("## %s" % (line))
+                    bad = True
+                    break
+                
+                field = field + 2
+
+            if bad:
+                lineNumber = lineNumber + 1                    
+                continue
+                
+            if not 'Utc' in vals:
+                print("Line %s has no timestamp" % (lineNumber))
+                print("Line %s " % (line))
+                lineNumber = lineNumber + 1                    
+                continue
+
+            msDate = float(vals["Utc"])
+            seconds = int((msDate  - 25569) * (86400))
+            ts = datetime.datetime.utcfromtimestamp(seconds)
+            #print("timestamp for %s (%d): %r" % (vals["Utc"], seconds, ts))
+            
+            if (ts < r['startts']):
+                continue;
+            if (ts >= r['endts']):
+                break;
+            
+            # LATLON
+            if ('Lat' in vals) and ('Lon' in vals):
+                lat = vals['Lat']
+                lon = vals['Lon']
+                if not (BOUNDS is None):
+                    if (lat > BOUNDS['north']) or (lat < BOUNDS['south']) or (lon > BOUNDS['east']) or (lon < BOUNDS['west']):
+                        print("## Line %d out of bounds lat %.2f lon %.2f [north %.2f south %.2f west %.2f east %.2f]" % (lineNumber, lat, lon, BOUNDS['north'], BOUNDS['south'], BOUNDS['west'], BOUNDS['east']))
+                        print(line)
+                        lineNumber = lineNumber + 1                    
+                        continue
+
+                r['LATLON'].append((ts, vals["Lat"], vals["Lon"]))
+                sampleCount += 1
+                
+            if 'HDG' in vals:
+                r['HDG'].append((ts, vals['HDG']))
+                sampleCount += 1
+
+            if 'AWA' in vals:
+                r['AWA'].append((ts, vals['AWA']))
+                sampleCount += 1
+            
+            if 'AWS' in vals:
+                r['AWS'].append((ts, vals['AWS']))
+                sampleCount += 1
+            
+            if 'TWA' in vals:
+                r['TWA'].append((ts, vals['TWA']))
+                sampleCount += 1
+            
+            if 'TWS' in vals:
+                r['TWS'].append((ts, vals['TWS']))
+                sampleCount += 1
+            
+            if 'BSP' in vals:
+                r['STW'].append((ts, vals['BSP']))
+                sampleCount += 1
+            
+            if 'COG' in vals:
+                r['COG'].append((ts, vals['COG']))
+                sampleCount += 1
+            
+            if 'SOG' in vals:
+                r['SOG'].append((ts, vals['SOG']))
+                sampleCount += 1
+            
+            if 'Rudder' in vals:
+                r['RUD'].append((ts, vals['Rudder']))
+                sampleCount += 1
+            
+            if 'ROT' in vals:
+                r['ROT'].append((ts, vals['ROT']))
+                sampleCount += 1
+            
+            lineNumber = lineNumber + 1                    
+                
+    
 def parse_race(regatta, r):
     if r['data'][-5:] == '.nmea':
         parse_race_0183(regatta, r)
     elif r['data'][-4:] == '.log':
         parse_race_n2k(regatta, r)
+    elif r['data'][-4:] == '.csv':
+        parse_race_csv(regatta, r)
     else:
         print("Unknown NMEA format file %s" % (r['data']))
 
@@ -787,6 +952,11 @@ def analyze_by_minute(regatta, r):
         bend =  l['startts']
         for i in range(1, len(legSamples)):
             awa = legSamples[i]['AWA']
+
+            if awa is None:
+                print("AWA is none for leg sample %d of %d legSamples" % (i, len(legSamples)))
+                continue
+                
             # Use sample if not near a tack or gybe
             if abs(awa) > minAWA and abs(awa) < maxAWA:
                 samplets = legSamples[i]['ts']
@@ -1315,13 +1485,21 @@ def plot_polars():
             
             if scloseHauled != sgybing:
                 stheta, speed, p90, bucket = zip(*(points[scloseHauled:sgybing]))
-                smooth = scipy.signal.savgol_filter(speed, 7, 3)
+                print("starboard len speed: %d" % (len(speed)))
+                if len(speed) < 7:
+                    smooth = speed
+                else:
+                    smooth = scipy.signal.savgol_filter(speed, 7, 3)
                 ax.plot(stheta, smooth, color='orange', linestyle='-')
-                ssmooth = scipy.signal.savgol_filter(p90, 7, 3)
+                if len(speed) < 7:
+                    ssmooth = speed
+                else:
+                    ssmooth = scipy.signal.savgol_filter(p90, 7, 3)
                 ax.plot(stheta, ssmooth, color='blue', linestyle='-')
 
             if pcloseHauled != pgybing:
                 ptheta, speed, p90, bucket = zip(*(points[pgybing:pcloseHauled]))
+                print("port len speed: %d" % (len(speed)))
                 smooth = scipy.signal.savgol_filter(speed, 7, 3)
                 ax.plot(ptheta, smooth, color='orange', linestyle='-')
                 psmooth = scipy.signal.savgol_filter(p90, 7, 3)
@@ -1356,9 +1534,10 @@ def plot_polars():
     ax.set_xticks(theta_ticks)
 
     for p, pd in enumerate(polarData):
-        (ptheta, psmooth, stheta, ssmooth) = pd['p90']
-        ax.plot(ptheta, psmooth, color=cmap[p], linewidth=2, linestyle='-', label="%2.0f kts" % (pd['min'] + ((pd['max'] - pd['min']) / 2)))
-        ax.plot(stheta, ssmooth, color=cmap[p], linewidth=2, linestyle='-')
+        if 'p90' in pd:
+            (ptheta, psmooth, stheta, ssmooth) = pd['p90']
+            ax.plot(ptheta, psmooth, color=cmap[p], linewidth=2, linestyle='-', label="%2.0f kts" % (pd['min'] + ((pd['max'] - pd['min']) / 2)))
+            ax.plot(stheta, ssmooth, color=cmap[p], linewidth=2, linestyle='-')
     plt.legend(loc='best')
     pn = "%s_%s_combined_polars" % (bn, "aggregate" if len(regattalist) > 1 else regattas[regattalist[0]]['basefn'])
     plt.savefig(pn, bbox_inches="tight")
